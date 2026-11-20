@@ -27,13 +27,32 @@ const places: Place[] = [
 ];
 
 const atlasFeatures = (feature(atlas as never, (atlas as never as { objects: { countries: never } }).objects.countries) as unknown as { features: AtlasFeature[] }).features;
+function boundsOf(item: AtlasFeature) {
+  const bounds = { minLng: Infinity, maxLng: -Infinity, minLat: Infinity, maxLat: -Infinity };
+  const visit = (coordinates: unknown): void => {
+    if (!Array.isArray(coordinates)) return;
+    if (typeof coordinates[0] === 'number' && typeof coordinates[1] === 'number') {
+      const [lng, lat] = coordinates as number[];
+      bounds.minLng = Math.min(bounds.minLng, lng);
+      bounds.maxLng = Math.max(bounds.maxLng, lng);
+      bounds.minLat = Math.min(bounds.minLat, lat);
+      bounds.maxLat = Math.max(bounds.maxLat, lat);
+    } else coordinates.forEach(visit);
+  };
+  visit((item.geometry as { coordinates?: unknown }).coordinates);
+  return bounds;
+}
+const indexedFeatures = atlasFeatures.map((item) => ({ item, bounds: boundsOf(item) }));
 const countryByNumber = new Map(countries.map((country) => [country.ccn3, country]));
 const regionNames = new Intl.DisplayNames(['zh-CN'], { type: 'region' });
 const languageNames = new Intl.DisplayNames(['zh-CN'], { type: 'language' });
 
 function countryAt(point: GlobePoint): Country | undefined {
-  const match = atlasFeatures.find((item) => geoContains(item as never, [point.lng, point.lat]));
-  return match ? countryByNumber.get(String(match.id).padStart(3, '0')) : undefined;
+  const match = indexedFeatures.find(({ item, bounds }) =>
+    point.lng >= bounds.minLng && point.lng <= bounds.maxLng &&
+    point.lat >= bounds.minLat && point.lat <= bounds.maxLat &&
+    geoContains(item as never, [point.lng, point.lat]));
+  return match ? countryByNumber.get(String(match.item.id).padStart(3, '0')) : undefined;
 }
 
 function coordinateText(value: number, positive: string, negative: string) {
